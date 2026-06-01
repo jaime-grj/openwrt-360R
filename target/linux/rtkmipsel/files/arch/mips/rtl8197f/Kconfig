@@ -1,0 +1,106 @@
+if REALTEK_97F
+source "arch/mips/rtl8197f/Kconfig.legacy"
+choice
+	prompt "Realtek SoC selection"
+	default SOC_RTL8197F
+	help
+	  Select Realtek MIPS SoC type.
+
+	config SOC_RTL8197F
+		bool "RTL8197F"
+		select RTL_8197F
+		select SYS_SUPPORTS_LITTLE_ENDIAN
+		select HAVE_CLK
+		select CLKDEV_LOOKUP
+                select OPENWRT_SDK
+		select HW_HAS_PCI
+                select WRT_BARRIER_BREAKER
+endchoice
+choice
+        prompt "Develop platform selection"
+        default RTL_8197F_WRT
+        help
+          Select the platform.
+
+        config RTL_8197F_WRT
+                bool "8197F OpenWRT BSP"
+                select RTL_8197F_GW
+                select OPENWRT_SDK
+                select WRT_BARRIER_BREAKER
+		select USB_ARCH_HAS_EHCI
+                select ARCH_REQUIRE_GPIOLIB
+                depends on SOC_RTL8197F
+
+endchoice
+
+config RTL_FLASH_SIZE
+        hex "97f flash size"
+        default "0x800000"
+        help
+          Select the flash size the you need.
+
+config RTL819X_DW_SPI
+	bool "BSP DesignWare SPI controller support"
+	default y
+	select SPI_DESIGNWARE
+	select SPI_DW_MMIO
+
+config RTL819X_DW_SPI0
+	bool "Enable DesignWare SPI0 controller"
+	depends on RTL819X_DW_SPI
+
+config RTL819X_DW_SPI1
+	bool "Enable DesignWare SPI1 controller"
+	depends on RTL819X_DW_SPI
+
+config RTK_BOOTINFO_DUALIMAGE
+	bool "DualImage Support(OpenWRT SDK)"
+	default n
+comment "Second Bank Offset"
+	depends on RTK_BOOTINFO_DUALIMAGE
+config RTK_DUALIMAGE_FLASH_OFFSET
+	hex "flash offset"
+	depends on RTK_BOOTINFO_DUALIMAGE
+	default "0x400000"
+	help
+	  offset of second bank, in most case it should be half of your flash size.
+endif
+
+
+menu "Realtek RTL8197F machine selection"
+
+config RTL8197_MACH_GENERIC
+	bool "Generic RTL8197F board"
+	help
+	  Say 'Y' here if you want your kernel to support a
+	  Generic RTL8197F board.
+
+config RTL8197_MACH_KINKAN
+	bool "8devices Kinkan devboard"
+	help
+	  Say 'Y' here if you want your kernel to support the
+	  8devices Kinkan development board.
+
+config RTL8197_MACH_KOMIKAN
+	bool "8devices Komikan devboard"
+	help
+	  Say 'Y' here if you want your kernel to support the
+	  8devices Komikan development board.
+
+config RTL8197_MACH_AC10U
+	bool "tenda ac10u"
+	help
+	  Say 'Y' here if you want your kernel to support the
+	  tenda ac10u router.
+config RTL8197_MACH_AC10UV2
+	bool "tenda ac10u v2"
+	help
+	  Say 'Y' here if you want your kernel to support the
+	  tenda ac10u v2 router.
+
+config RTL8197_MACH_NETIS360R
+	bool "netis 360r"
+	help
+	  Say 'Y' here if you want your kernel to support the
+	  Netis 360R router.
+endmenu

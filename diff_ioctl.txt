@@ -1,0 +1,1044 @@
+diff --git a/package/kernel/rtl8192cd/8192cd_ioctl.c b/package/kernel/rtl8192cd/8192cd_ioctl.c
+index e8db218452..df2efb4604 100755
+--- a/package/kernel/rtl8192cd/8192cd_ioctl.c
++++ b/package/kernel/rtl8192cd/8192cd_ioctl.c
+@@ -55,7 +55,6 @@
+ #include <linux/wireless.h>
+ #include <net80211/ieee80211.h>
+ #include <net80211/ieee80211_crypto.h>
+-#undef NUM_ACL
+ #include <net80211/ieee80211_ioctl.h>
+ #include "./8192cd_net80211.h"
+ 
+@@ -99,6 +98,7 @@
+ #if defined(STA_CONTROL) && STA_CONTROL_ALGO == STA_CONTROL_ALGO3
+ #define RTL8192CD_IOCTL_UPDATE_STA				0x8BF9 
+ #define RTL8192CD_IOCTL_DELETE_STA				0x8BFA //20170105
++#define RTL8192CD_IOCTL_HIDDEN_AP	        	0x8BC2
+ #endif
+ #endif
+ 
+@@ -160,7 +160,7 @@
+ #define SIORXANTSELECT	0x8B5E
+ #endif
+ #endif
+-#ifdef BT_COEXIST
++#ifdef ENABLE_BT_COEXIST
+ #define SIOBTCH2C 		0x8B60
+ #endif
+ #ifdef MP_TEST
+@@ -650,7 +650,7 @@ struct iw_priv_args privtab[] = {
+ #ifdef POWER_TRIM
+ 	{ DO_KFREE, IW_PRIV_TYPE_CHAR | 40, 0, "do_kfree" },
+ #endif
+-#ifdef BT_COEXIST
++#ifdef ENABLE_BT_COEXIST
+ 	{ SIOBTCH2C, IW_PRIV_TYPE_CHAR | 40, IW_PRIV_TYPE_CHAR | 40, "test" },
+ #endif
+ 
+@@ -1270,7 +1270,7 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"txpwr_reduction",		BYTE_T,	_OFFSET(dot11RFEntry.txpwr_reduction), _SIZE(dot11RFEntry.txpwr_reduction), 0},
+ 	{"rfe_type",			BYTE_T,	_OFFSET(dot11RFEntry.rfe_type), _SIZE(dot11RFEntry.rfe_type), 0},	
+ #ifdef NHM_ACS2_SUPPORT	
+-	{"acs_type",			INT_T,	_OFFSET(dot11RFEntry.acs_type), _SIZE(dot11RFEntry.acs_type), 2},
++	{"acs_type",			INT_T,	_OFFSET(dot11RFEntry.acs_type), _SIZE(dot11RFEntry.acs_type), 1},
+ 	{"acs2_dis_clean_channel",	INT_T,	_OFFSET(dot11RFEntry.acs2_dis_clean_channel), _SIZE(dot11RFEntry.acs2_dis_clean_channel), 0},
+ 	{"acs2_round",				INT_T,	_OFFSET(dot11RFEntry.acs2_round), _SIZE(dot11RFEntry.acs2_round), 1},
+ 	{"acs2_clm_weighting_mode",		INT_T,	_OFFSET(dot11RFEntry.acs2_clm_weighting_mode), _SIZE(dot11RFEntry.acs2_clm_weighting_mode), 1},
+@@ -1421,6 +1421,9 @@ static struct iwpriv_arg mib_table[] = {
+ #endif
+ 	{"shortretry",	INT_T,		_OFFSET(dot11OperationEntry.dot11ShortRetryLimit), _SIZE(dot11OperationEntry.dot11ShortRetryLimit), 0},
+ 	{"longretry",	INT_T,		_OFFSET(dot11OperationEntry.dot11LongRetryLimit), _SIZE(dot11OperationEntry.dot11LongRetryLimit), 0},
++#ifdef LIFETIME_FEATURE
++	{"lifetime",	INT_T,		_OFFSET(dot11OperationEntry.lifetime), _SIZE(dot11OperationEntry.lifetime), 0}, //unit: millisecond, 0: disable this feature
++#endif	
+ 	{"expired_time",INT_T,		_OFFSET(dot11OperationEntry.expiretime), _SIZE(dot11OperationEntry.expiretime), 30000}, /*in 10ms*/
+ #if defined(CONFIG_RTL8672)
+ 	{"led_type",	INT_T,		_OFFSET(dot11OperationEntry.ledtype), _SIZE(dot11OperationEntry.ledtype), LEDTYPE_SW_LED2_GPIO8_LINKTXRX},
+@@ -1503,7 +1506,8 @@ static struct iwpriv_arg mib_table[] = {
+ 	// struct br_ext_info
+ 	{"nat25_disable",		INT_T,	_OFFSET(ethBrExtInfo.nat25_disable), _SIZE(ethBrExtInfo.nat25_disable), 0},
+ 	{"macclone_enable",		INT_T,	_OFFSET(ethBrExtInfo.macclone_enable), _SIZE(ethBrExtInfo.macclone_enable), 0},
+-	{"macclone_method",		INT_T,	_OFFSET(ethBrExtInfo.macclone_method), _SIZE(ethBrExtInfo.macclone_method), 1},
++	{"macclone_method",		INT_T,	_OFFSET(ethBrExtInfo.macclone_method), _SIZE(ethBrExtInfo.macclone_method), 2},	
++	{"macclone_eth_method",		INT_T,	_OFFSET(ethBrExtInfo.macclone_eth_method), _SIZE(ethBrExtInfo.macclone_eth_method), 1},		
+ 	{"dhcp_bcst_disable",	INT_T,	_OFFSET(ethBrExtInfo.dhcp_bcst_disable), _SIZE(ethBrExtInfo.dhcp_bcst_disable), 0},
+ 	{"add_pppoe_tag",		INT_T,	_OFFSET(ethBrExtInfo.addPPPoETag), _SIZE(ethBrExtInfo.addPPPoETag), 1},
+ 	{"clone_mac_addr",		BYTE_ARRAY_T,	_OFFSET(ethBrExtInfo.nat25_dmzMac), _SIZE(ethBrExtInfo.nat25_dmzMac), 0},
+@@ -1543,6 +1547,18 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"use_txq",		INT_T,		_OFFSET(miscEntry.use_txq), _SIZE(miscEntry.use_txq), 1},
+ #endif
+ 	{"func_off",	INT_T,		_OFFSET(miscEntry.func_off), _SIZE(miscEntry.func_off), 0},
++#ifdef TCP_ACK_ACC
++	{"tcpack_acc",	INT_T,		_OFFSET(miscEntry.tcpack_acc), _SIZE(miscEntry.tcpack_acc), 0},
++	{"tcpack_use_hw_timer",	INT_T,		_OFFSET(miscEntry.tcpack_use_hw_timer), _SIZE(miscEntry.tcpack_use_hw_timer), 2},
++	{"tcpack_to",	INT_T,		_OFFSET(miscEntry.tcpack_to), _SIZE(miscEntry.tcpack_to), 1}, // in milisecond
++	{"tcpack_to_2g",	INT_T,		_OFFSET(miscEntry.tcpack_to_2g), _SIZE(miscEntry.tcpack_to_2g), 2}, // in milisecond
++	{"tcpack_delay_start",	INT_T,		_OFFSET(miscEntry.tcpack_delay_start), _SIZE(miscEntry.tcpack_delay_start), 100},  /*in millisecond*/
++	{"tcpack_cnt_th1",	INT_T,		_OFFSET(miscEntry.tcpack_cnt_th1), _SIZE(miscEntry.tcpack_cnt_th1), 2},  	/*for 11ac, max queue ack num*/
++	{"tcpack_cnt_th2",	INT_T,		_OFFSET(miscEntry.tcpack_cnt_th2), _SIZE(miscEntry.tcpack_cnt_th2), 4},  	/*for 11n, max queue ack num*/
++	{"tcpack_rx_th1",	INT_T,		_OFFSET(miscEntry.tcpack_rx_th1), _SIZE(miscEntry.tcpack_rx_th1), 1000},  	//8700 /*for 11n-20M, turn on threshold*/
++	{"tcpack_rx_th2",	INT_T,		_OFFSET(miscEntry.tcpack_rx_th2), _SIZE(miscEntry.tcpack_rx_th2), 1000},  	//14000 /*for 11n-40M, turn on threshold*/
++	{"tcpack_rx_th3",	INT_T,		_OFFSET(miscEntry.tcpack_rx_th3), _SIZE(miscEntry.tcpack_rx_th3), 1000},  	//14000 /*for 11ac, turn on threshold*/
++#endif	
+ #ifdef COCHANNEL_RTS
+ 	{"auto_rts_mode",	INT_T,		_OFFSET(miscEntry.auto_rts_mode), _SIZE(miscEntry.auto_rts_mode), 1},
+ #endif	
+@@ -1840,7 +1856,8 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"ft_r0key_timeout", 	INT_T,	_OFFSET(dot11FTEntry.dot11FTR0KeyLifetime), _SIZE(dot11FTEntry.dot11FTR0KeyLifetime), 0},
+ 	{"ft_r0kh_id", 	STRING_T,	_OFFSET(dot11FTEntry.dot11FTR0KeyHolderID), _SIZE(dot11FTEntry.dot11FTR0KeyHolderID), 0},
+ 	{"ft_push", 	INT_T,	_OFFSET(dot11FTEntry.dot11FTR1KeyPushEnable), _SIZE(dot11FTEntry.dot11FTR1KeyPushEnable), 1},
+-#ifdef SUPPORT_FAST_CONFIG
++
++#if (SUPPORT_FAST_CONFIG == 1) || (SUPPORT_FAST_CONFIG == 2)
+ 	{"ft_4way", 	INT_T,	_OFFSET(dot11FTEntry.dot11FT4way), _SIZE(dot11FTEntry.dot11FT4way), 1},
+ #endif
+ #endif
+@@ -1913,12 +1930,18 @@ static struct iwpriv_arg mib_table[] = {
+ #ifdef CONFIG_RTL_WLAN_DIAGNOSTIC
+ 	{"diagnostic",	DEBUG_T,	5, sizeof(rtl8192cd_wlan_diagnostic), 0},
+ #endif
++#endif
++#ifdef DEL_EXPIRE_STA
++	{"del_expire_sta",			INT_T,	_OFFSET(dot11StationConfigEntry.del_expire_station), _SIZE(dot11StationConfigEntry.del_expire_station), 1},
+ #endif
+ 
+ 	// for RF debug
+ 	{"ofdm_1ss_oneAnt",	RFFT_T,	_OFFSET_RFFT(ofdm_1ss_oneAnt), _SIZE_RFFT(ofdm_1ss_oneAnt), 0},// 1ss and ofdm rate using one ant
+ 	{"pathB_1T",		RFFT_T,	_OFFSET_RFFT(pathB_1T), _SIZE_RFFT(pathB_1T), 0},// using pathB as 1T2R/1T1R tx path
+ 	{"rssi_dump",		RFFT_T,	_OFFSET_RFFT(rssi_dump), _SIZE_RFFT(rssi_dump), 0},
++	{"stats_int",		RFFT_T,	_OFFSET_RFFT(stats_int), _SIZE_RFFT(stats_int), 30}, // unit: min
++	{"dbgcomp",		RFFT_T,	_OFFSET_RFFT(dbgcomp), _SIZE_RFFT(dbgcomp), 1},
++	{"dbglevel",		RFFT_T,	_OFFSET_RFFT(dbglevel), _SIZE_RFFT(dbglevel), DRV_DBG_WARNING},
+ #ifdef SW_TX_QUEUE	
+ 	{"totaltp",		RFFT_T,	_OFFSET_RFFT(totaltp), _SIZE_RFFT(totaltp), 0},
+ #endif	
+@@ -1957,6 +1980,20 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"tdma_dig_timer_ms",	ODM_DM_1UT, _OFFSET_ODM_DM(tdma_dig_timer_ms), _SIZE_ODM_DM(tdma_dig_timer_ms), 20},
+ #endif	//#if (PHYDM_TDMA_DIG_SUPPORT == 1)
+ 
++#if (PHYDM_LNA_SAT_CHK_TYPE2 == 1)
++	{"snr_var_thd",		ODM_DM_1UT, _OFFSET_ODM_DM(snr_var_thd), _SIZE_ODM_DM(snr_var_thd), 9},
++	{"delta_snr_mean",		ODM_DM_1UT, _OFFSET_ODM_DM(delta_snr_mean), _SIZE_ODM_DM(delta_snr_mean), 2},
++	{"delta_snr_var",		ODM_DM_1UT, _OFFSET_ODM_DM(delta_snr_var), _SIZE_ODM_DM(delta_snr_var), 4},
++	{"total_bit_shift",		ODM_DM_1UT, _OFFSET_ODM_DM(total_bit_shift), _SIZE_ODM_DM(total_bit_shift), 8},
++	// 0:force default, 1:force sat table, 2:auto
++	{"is_force_lna_sat_table",		ODM_DM_1UT, _OFFSET_ODM_DM(is_force_lna_sat_table), _SIZE_ODM_DM(is_force_lna_sat_table), 2},
++	{"is_force_lna_sat_macid",		ODM_DM_1UT, _OFFSET_ODM_DM(is_force_lna_sat_macid), _SIZE_ODM_DM(is_force_lna_sat_macid), 0},	// default uses rssi_min's macid
++	{"is_snr_detail_en",		ODM_DM_1UT, _OFFSET_ODM_DM(is_snr_detail_en), _SIZE_ODM_DM(is_snr_detail_en), 0},
++	{"lwr_snr_ratio_bit_shift",		ODM_DM_1UT, _OFFSET_ODM_DM(lwr_snr_ratio_bit_shift), _SIZE_ODM_DM(lwr_snr_ratio_bit_shift), 2},
++	{"force_change_period",		ODM_DM_1UT, _OFFSET_ODM_DM(force_change_period), _SIZE_ODM_DM(force_change_period), 30},
++
++#endif
++
+ #ifdef MULTI_STA_REFINE
+ 	{"msta",		RFFT_T, _OFFSET_RFFT(msta_refine), _SIZE_RFFT(msta_refine), 1},	
+ #endif
+@@ -1973,14 +2010,16 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"rssiTx20MUpper",	RFFT_T,	_OFFSET_RFFT(rssiTx20MUpper), _SIZE_RFFT(rssiTx20MUpper), 20},
+ 	{"rssiTx20MLower",	RFFT_T,	_OFFSET_RFFT(rssiTx20MLower), _SIZE_RFFT(rssiTx20MLower), 15},
+ 	{"rssi_expire_to",	RFFT_T,	_OFFSET_RFFT(rssi_expire_to), _SIZE_RFFT(rssi_expire_to), 60},
+-	{"rts_init_rate",	RFFT_T,	_OFFSET_RFFT(rts_init_rate), _SIZE_RFFT(rts_init_rate), 0},
++	{"rts_init_rate",	RFFT_T,	_OFFSET_RFFT(rts_init_rate), _SIZE_RFFT(rts_init_rate), 0xff},
++	{"rts_intf_mode",	RFFT_T,	_OFFSET_RFFT(rts_intf_mode), _SIZE_RFFT(rts_intf_mode), 0},
++	{"rts_intf_dig_th",	RFFT_T,	_OFFSET_RFFT(rts_intf_dig_th), _SIZE_RFFT(rts_intf_dig_th), 0x32},
+ 	{"auto_rts_rate",	RFFT_T,	_OFFSET_RFFT(auto_rts_rate), _SIZE_RFFT(auto_rts_rate), 1},	
+ 
+ 	{"cck_pwr_max",		RFFT_T,	_OFFSET_RFFT(cck_pwr_max), _SIZE_RFFT(cck_pwr_max), 0},
+ 	{"cck_tx_pathB",	RFFT_T,	_OFFSET_RFFT(cck_tx_pathB), _SIZE_RFFT(cck_tx_pathB), 0},
+ 
+ 	{"tx_pwr_ctrl",		RFFT_T,	_OFFSET_RFFT(tx_pwr_ctrl), _SIZE_RFFT(tx_pwr_ctrl), 1},
+-
++	{"icmp_tid",		RFFT_T,	_OFFSET_RFFT(icmp_tid), _SIZE_RFFT(icmp_tid), 0},
+ 	// 11n ap AES debug
+ 	{"aes_check_th",	RFFT_T,	_OFFSET_RFFT(aes_check_th), _SIZE_RFFT(aes_check_th), 2},
+ 
+@@ -2140,6 +2179,7 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"txPowerPlus_mcs_14",	RFFT_T,	_OFFSET_RFFT(txPowerPlus_mcs_14), _SIZE_RFFT(txPowerPlus_mcs_14), 0x7f},
+ 	{"txPowerPlus_mcs_15",	RFFT_T,	_OFFSET_RFFT(txPowerPlus_mcs_15), _SIZE_RFFT(txPowerPlus_mcs_15), 0x7f},
+ #endif
++	{"turbomode", 	RFFT_T, _OFFSET_RFFT(turbomode), _SIZE_RFFT(turbomode), 0}, 
+ 
+ 	{"rootFwBeacon",		RFFT_T,	_OFFSET_RFFT(rootFwBeacon), _SIZE_RFFT(rootFwBeacon), 1},
+ 	{"ledBlinkingFreq",		RFFT_T,	_OFFSET_RFFT(ledBlinkingFreq), _SIZE_RFFT(ledBlinkingFreq), 1},
+@@ -2189,9 +2229,47 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"dfs_next_ch",		RFFT_T,	_OFFSET_RFFT(dfs_next_ch), _SIZE_RFFT(dfs_next_ch), 0},
+ 	{"det_off",			RFFT_T,	_OFFSET_RFFT(dfs_det_off), _SIZE_RFFT(dfs_det_off), 0},
+ 	#if defined(CONFIG_WLAN_HAL_8814AE) || defined(CONFIG_WLAN_HAL_8822BE)
+-	{"radar_diff_on",			RFFT_T,	_OFFSET_RFFT(dfs_radar_diff_on), _SIZE_RFFT(dfs_radar_diff_on), 0},
++	{"radar_diff_on",			RFFT_T,	_OFFSET_RFFT(dfs_radar_diff_on), _SIZE_RFFT(dfs_radar_diff_on), 1},
+ 	{"radar_diff_print",			RFFT_T,	_OFFSET_RFFT(dfs_radar_diff_print), _SIZE_RFFT(dfs_radar_diff_print), 0},
+ 	{"print_hist_report",			RFFT_T,	_OFFSET_RFFT(dfs_print_hist_report), _SIZE_RFFT(dfs_print_hist_report), 0},
++	{"dfs_false_mask_th",			RFFT_T,	_OFFSET_RFFT(dfs_false_mask_th), _SIZE_RFFT(dfs_false_mask_th), 10},
++	{"false_peak_hist1_th",			RFFT_T,	_OFFSET_RFFT(false_peak_hist1_th), _SIZE_RFFT(false_peak_hist1_th), 4},
++	{"false_peak_hist1_th_max",			RFFT_T,	_OFFSET_RFFT(false_peak_hist1_th_max), _SIZE_RFFT(false_peak_hist1_th_max), 11},
++	{"false_peak_hist2_th_above0",			RFFT_T,	_OFFSET_RFFT(false_peak_hist2_th_above0), _SIZE_RFFT(false_peak_hist2_th_above0), 9},
++	{"false_peak_hist2_th_above10",			RFFT_T,	_OFFSET_RFFT(false_peak_hist2_th_above10), _SIZE_RFFT(false_peak_hist2_th_above10), 4},
++	{"false_width_hist_th_g4g5",			RFFT_T,	_OFFSET_RFFT(false_width_hist_th_g4g5), _SIZE_RFFT(false_width_hist_th_g4g5), 10},
++	{"false_width_hist_sum_th_g5",			RFFT_T,	_OFFSET_RFFT(false_width_hist_sum_th_g5), _SIZE_RFFT(false_width_hist_sum_th_g5), 0},
++	{"false_width_hist_th_g0",			RFFT_T,	_OFFSET_RFFT(false_width_hist_th_g0), _SIZE_RFFT(false_width_hist_th_g0), 30},
++	{"false_width_hist_th_gtotal",			RFFT_T,	_OFFSET_RFFT(false_width_hist_th_gtotal), _SIZE_RFFT(false_width_hist_th_gtotal), 40},
++	{"interval_hist_th",			RFFT_T,	_OFFSET_RFFT(interval_hist_th), _SIZE_RFFT(interval_hist_th), 5},
++	{"false_interval_hist_th_g5",			RFFT_T,	_OFFSET_RFFT(false_interval_hist_th_g5), _SIZE_RFFT(false_interval_hist_th_g5), 4},
++	{"pri_pw_diff_th",			RFFT_T,	_OFFSET_RFFT(pri_width_diff_th), _SIZE_RFFT(pri_width_diff_th), 4},
++	{"pri_pw_diff_fcc_th",			RFFT_T,	_OFFSET_RFFT(pri_width_diff_fcc_th), _SIZE_RFFT(pri_width_diff_fcc_th), 8},
++	{"pri_pw_diff_w53_th",			RFFT_T,	_OFFSET_RFFT(pri_width_diff_w53_th), _SIZE_RFFT(pri_width_diff_w53_th), 10},
++	{"pri_pw_diff_fcc_idle_th",			RFFT_T,	_OFFSET_RFFT(pri_width_diff_fcc_idle_th), _SIZE_RFFT(pri_width_diff_fcc_idle_th), 2},
++	{"pri_sum_g5_th",			RFFT_T,	_OFFSET_RFFT(pri_sum_g5_th), _SIZE_RFFT(pri_sum_g5_th), 4},
++	{"pri_sum_safe_th",			RFFT_T,	_OFFSET_RFFT(pri_sum_safe_th), _SIZE_RFFT(pri_sum_safe_th), 50},
++	{"pri_sum_safe_fcc_th",			RFFT_T,	_OFFSET_RFFT(pri_sum_safe_fcc_th), _SIZE_RFFT(pri_sum_safe_fcc_th), 30},
++	{"pri_type1_low_fcc_th",			RFFT_T,	_OFFSET_RFFT(pri_type1_low_fcc_th), _SIZE_RFFT(pri_type1_low_fcc_th), 50},
++	{"pri_type1_upp_fcc_th",			RFFT_T,	_OFFSET_RFFT(pri_type1_upp_fcc_th), _SIZE_RFFT(pri_type1_upp_fcc_th), 110},
++	{"pri_type1_cen_fcc_th",			RFFT_T,	_OFFSET_RFFT(pri_type1_cen_fcc_th), _SIZE_RFFT(pri_type1_cen_fcc_th), 70},
++	{"pri_sum_g1_th",			RFFT_T,	_OFFSET_RFFT(pri_sum_g1_th), _SIZE_RFFT(pri_sum_g1_th), 9},
++	{"pri_sum_g1_fcc_th",			RFFT_T,	_OFFSET_RFFT(pri_sum_g1_fcc_th), _SIZE_RFFT(pri_sum_g1_fcc_th), 7},
++	{"pri_sum_g3_fcc_th",			RFFT_T,	_OFFSET_RFFT(pri_sum_g3_fcc_th), _SIZE_RFFT(pri_sum_g3_fcc_th), 7},
++	{"pri_sum_type4_th",		RFFT_T,	_OFFSET_RFFT(pri_sum_type4_th), _SIZE_RFFT(pri_sum_type4_th), 16},
++	{"pri_sum_type6_th",		RFFT_T,	_OFFSET_RFFT(pri_sum_type6_th), _SIZE_RFFT(pri_sum_type6_th), 12},
++	{"pri_sum_g5_under_g1_th",			RFFT_T,	_OFFSET_RFFT(pri_sum_g5_under_g1_th), _SIZE_RFFT(pri_sum_g5_under_g1_th), 0},
++	{"pw_g0_th",			RFFT_T,	_OFFSET_RFFT(pw_g0_th), _SIZE_RFFT(pw_g0_th), 8},
++	{"pw_std_idle_th",		RFFT_T,	_OFFSET_RFFT(pw_std_idle_th), _SIZE_RFFT(pw_std_idle_th), 10},
++	{"pri_std_idle_th",		RFFT_T,	_OFFSET_RFFT(pri_std_idle_th), _SIZE_RFFT(pri_std_idle_th), 10},
++	{"pw_std_th",			RFFT_T,	_OFFSET_RFFT(pw_std_th), _SIZE_RFFT(pw_std_th), 9},
++	{"pri_std_th",			RFFT_T,	_OFFSET_RFFT(pri_std_th), _SIZE_RFFT(pri_std_th), 6},
++	{"pw_long_low_th",			RFFT_T,	_OFFSET_RFFT(pulsewidth_long_lower_th), _SIZE_RFFT(pulsewidth_long_lower_th), 7},
++	{"pw_long_low_20M_th",		RFFT_T,	_OFFSET_RFFT(pulsewidth_long_lower_20m_th), _SIZE_RFFT(pulsewidth_long_lower_20m_th), 14},
++	{"pw_long_sum_upp_th",			RFFT_T,	_OFFSET_RFFT(pulsewidth_long_sum_upper_th), _SIZE_RFFT(pulsewidth_long_sum_upper_th), 90},
++	{"pri_long_upp_th",			RFFT_T,	_OFFSET_RFFT(pri_long_upper_th), _SIZE_RFFT(pri_long_upper_th), 30},
++	{"type4_pw_max_cnt",			RFFT_T,	_OFFSET_RFFT(type4_pw_max_cnt), _SIZE_RFFT(type4_pw_max_cnt), 7},
++	{"type4_safe_pri_sum_th",			RFFT_T,	_OFFSET_RFFT(type4_safe_pri_sum_th), _SIZE_RFFT(type4_safe_pri_sum_th), 5},
+ 	#endif
+ 	{"det_reset",		RFFT_T,	_OFFSET_RFFT(dfs_det_reset), _SIZE_RFFT(dfs_det_reset), 0},
+ 	{"fa_lower",		RFFT_T,	_OFFSET_RFFT(dfs_fa_cnt_lower), _SIZE_RFFT(dfs_fa_cnt_lower), 25},
+@@ -2201,8 +2279,9 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"fa_inc_ratio",	RFFT_T,	_OFFSET_RFFT(dfs_fa_cnt_inc_ratio), _SIZE_RFFT(dfs_fa_cnt_inc_ratio), 2},	
+ 	{"crc32_lower",		RFFT_T,	_OFFSET_RFFT(dfs_crc32_cnt_lower), _SIZE_RFFT(dfs_crc32_cnt_lower), 10},
+ 	{"ratio_th",		RFFT_T,	_OFFSET_RFFT(dfs_fa_ratio_th), _SIZE_RFFT(dfs_fa_ratio_th), 15},
+-	{"det_period",		RFFT_T,	_OFFSET_RFFT(dfs_det_period), _SIZE_RFFT(dfs_det_period), 20},
+-	{"det_period_jp_w53",		RFFT_T,	_OFFSET_RFFT(dfs_det_period_jp_w53), _SIZE_RFFT(dfs_det_period_jp_w53), 15},
++	{"duty_cycle_th",		RFFT_T,	_OFFSET_RFFT(dfs_nhm_duty_cycle_th), _SIZE_RFFT(dfs_nhm_duty_cycle_th), 100},
++	{"det_period",		RFFT_T,	_OFFSET_RFFT(dfs_det_period), _SIZE_RFFT(dfs_det_period), 4},
++	{"det_period_jp_w53",		RFFT_T,	_OFFSET_RFFT(dfs_det_period_jp_w53), _SIZE_RFFT(dfs_det_period_jp_w53), 4},
+ 	{"det_print",		RFFT_T,	_OFFSET_RFFT(dfs_det_print), _SIZE_RFFT(dfs_det_print), 0},	
+ 	{"det_print1",		RFFT_T,	_OFFSET_RFFT(dfs_det_print1), _SIZE_RFFT(dfs_det_print1), 1},
+ 	{"det_print2",		RFFT_T,	_OFFSET_RFFT(dfs_det_print2), _SIZE_RFFT(dfs_det_print2), 0},
+@@ -2225,7 +2304,7 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"pwdb_th",			RFFT_T,	_OFFSET_RFFT(dfs_pwdb_th), _SIZE_RFFT(dfs_pwdb_th), 0x08},
+ 	{"pwdb_scalar_factor",		RFFT_T,	_OFFSET_RFFT(dfs_pwdb_scalar_factor), _SIZE_RFFT(dfs_pwdb_scalar_factor), 12},
+ 	{"psd_pw_th",		RFFT_T,	_OFFSET_RFFT(dfs_psd_pw_th), _SIZE_RFFT(dfs_psd_pw_th), 65},
+-	{"dfs_psd_idle_on",			RFFT_T,	_OFFSET_RFFT(dfs_psd_idle_on), _SIZE_RFFT(dfs_psd_idle_on), 1},
++	{"dfs_psd_idle_on",			RFFT_T,	_OFFSET_RFFT(dfs_psd_idle_on), _SIZE_RFFT(dfs_psd_idle_on), 0},
+ 	{"dfs_psd_TP_on",			RFFT_T,	_OFFSET_RFFT(dfs_psd_TP_on), _SIZE_RFFT(dfs_psd_TP_on), 0},
+ 	{"psd_skip_lookup_table",	RFFT_T,	_OFFSET_RFFT(psd_skip_lookup_table), _SIZE_RFFT(psd_skip_lookup_table), 1},
+ 	{"dfs_psd_delay",		RFFT_T,	_OFFSET_RFFT(dfs_psd_delay), _SIZE_RFFT(dfs_psd_delay), 30},
+@@ -2253,7 +2332,8 @@ static struct iwpriv_arg mib_table[] = {
+ #else
+ 	{"swqaggnum",		RFFT_T, _OFFSET_RFFT(swq_aggnum), _SIZE_RFFT(swq_aggnum), 8},
+ #endif
+-	{"swqturboaggnum",		RFFT_T, _OFFSET_RFFT(swqturboaggnum), _SIZE_RFFT(swqturboaggnum), 16},
++	{"manual_swqturboaggnum",		RFFT_T, _OFFSET_RFFT(manual_swqturboaggnum), _SIZE_RFFT(manual_swqturboaggnum), 0},
++	{"manual_swqturbothd",	RFFT_T, _OFFSET_RFFT(manual_swqturbothd), _SIZE_RFFT(manual_swqturbothd), 0},
+ 	{"swqmaxturbotime",		RFFT_T, _OFFSET_RFFT(swqmaxturbotime), _SIZE_RFFT(swqmaxturbotime), 1},
+ 	
+ 	{"thd1",			RFFT_T, _OFFSET_RFFT(timeout_thd), _SIZE_RFFT(timeout_thd), 60},
+@@ -2291,6 +2371,14 @@ static struct iwpriv_arg mib_table[] = {
+ #endif
+ #endif
+ 
++#ifdef ENABLE_BT_COEXIST
++	{"rtw_btcoex_enable",	RFFT_T, _OFFSET_RFFT(rtw_btcoex_enable), _SIZE_RFFT(rtw_btcoex_enable), 2},
++	{"rtw_ant_num",		RFFT_T, _OFFSET_RFFT(rtw_ant_num), _SIZE_RFFT(rtw_ant_num), 0},
++	{"rtw_bt_iso",		RFFT_T, _OFFSET_RFFT(rtw_bt_iso), _SIZE_RFFT(rtw_bt_iso), 2},
++	{"rtw_bt_sco",		RFFT_T, _OFFSET_RFFT(rtw_bt_sco), _SIZE_RFFT(rtw_bt_sco), 3},
++	{"rtw_bt_ampdu",	RFFT_T, _OFFSET_RFFT(rtw_bt_ampdu), _SIZE_RFFT(rtw_bt_ampdu), 1},
++#endif
++
+ #ifdef RTK_ATM
+     {"atm_en",          RFFT_T, _OFFSET_RFFT(atm_en), _SIZE_RFFT(atm_en), 0},//default off
+     {"atm_mode",        RFFT_T, _OFFSET_RFFT(atm_mode), _SIZE_RFFT(atm_mode), 1},// 1:if auto 2:if manual 3:sta auto 4 sta manual
+@@ -2317,6 +2405,18 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"atm_adj_bto",		RFFT_T, _OFFSET_RFFT(atm_adj_bto), _SIZE_RFFT(atm_adj_bto), 1},// // calc burst size every bto second
+ #endif
+ 
++#if defined(WIFI_QOS_ENHANCE)
++	{"qos_enhance_enable",			RFFT_T, 	_OFFSET_RFFT(qos_enhance_enable), _SIZE_RFFT(qos_enhance_enable), 0},	
++	{"qos_enhance_rssi_low_thd",	RFFT_T, 	_OFFSET_RFFT(qos_enhance_rssi_low_thd), _SIZE_RFFT(qos_enhance_rssi_low_thd), 25},
++	{"qos_enhance_rssi_high_thd",	RFFT_T, 	_OFFSET_RFFT(qos_enhance_rssi_high_thd), _SIZE_RFFT(qos_enhance_rssi_high_thd), 40},
++	{"qos_enhance_tp_low_thd",		RFFT_T, 	_OFFSET_RFFT(qos_enhance_tp_low_thd), _SIZE_RFFT(qos_enhance_tp_low_thd), 96},//kbps
++	{"qos_enhance_tp_middle_thd",	RFFT_T, 	_OFFSET_RFFT(qos_enhance_tp_middle_thd), _SIZE_RFFT(qos_enhance_tp_middle_thd), 192},//kbps
++	{"qos_enhance_tp_high_thd", 	RFFT_T, 	_OFFSET_RFFT(qos_enhance_tp_high_thd), _SIZE_RFFT(qos_enhance_tp_high_thd), 512},//kbps
++	{"qos_edge_enable", 			RFFT_T, 	_OFFSET_RFFT(qos_edge_enable), _SIZE_RFFT(qos_edge_enable), 1},//edge sta remove from qos enhance sta	
++	{"qos_enhance_rssi_edge_thd",	RFFT_T, 	_OFFSET_RFFT(qos_enhance_rssi_edge_thd), _SIZE_RFFT(qos_enhance_rssi_edge_thd), 15},//edge rssi
++	{"qos_edca_enable", 			RFFT_T, 	_OFFSET_RFFT(qos_edca_enable), _SIZE_RFFT(qos_edca_enable), 1},//change edca param when qos_enhance active
++#endif
++
+ 	{"amsdu_th",        RFFT_T, _OFFSET_RFFT(amsdu_th), _SIZE_RFFT(amsdu_th), 50}, // tx rate
+ 	{"amsdu_th2",        RFFT_T, _OFFSET_RFFT(amsdu_th2), _SIZE_RFFT(amsdu_th2), 45}, // tx_rate lower
+ 	{"rts_rssith",        RFFT_T, _OFFSET_RFFT(rts_rssith), _SIZE_RFFT(rts_rssith), 30},	
+@@ -2325,16 +2425,18 @@ static struct iwpriv_arg mib_table[] = {
+     {"stactrl_enable",       BYTE_T,   _OFFSET(staControl.stactrl_enable),        _SIZE(staControl.stactrl_enable),0},
+     {"stactrl_groupID",      BYTE_T,   _OFFSET(staControl.stactrl_groupID),        _SIZE(staControl.stactrl_groupID),0},    
+     {"stactrl_prefer_band",  BYTE_T,   _OFFSET(staControl.stactrl_prefer_band),   _SIZE(staControl.stactrl_prefer_band),0},
+-    {"stactrl_param_1",      INT_T,    _OFFSET(staControl.stactrl_param_1),       _SIZE(staControl.stactrl_param_1), 30}, //preferband rssi thredshold
+-    {"stactrl_param_2",      INT_T,    _OFFSET(staControl.stactrl_param_2),       _SIZE(staControl.stactrl_param_2), 5}, //rssi thredshold tolerence
++    {"stactrl_param_1",      INT_T,    _OFFSET(staControl.stactrl_param_1),       _SIZE(staControl.stactrl_param_1), 25}, //preferband rssi threshold
++    {"stactrl_param_2",      INT_T,    _OFFSET(staControl.stactrl_param_2),       _SIZE(staControl.stactrl_param_2), 5}, //rssi threshold tolerence
+     {"stactrl_param_3",      INT_T,    _OFFSET(staControl.stactrl_param_3),       _SIZE(staControl.stactrl_param_3), 300},  //timerX
+-    {"stactrl_param_4",      INT_T,    _OFFSET(staControl.stactrl_param_4),       _SIZE(staControl.stactrl_param_4), 2}, //retry Y
++    {"stactrl_param_4",      INT_T,    _OFFSET(staControl.stactrl_param_4),       _SIZE(staControl.stactrl_param_4), 3}, //retry Y
+     {"stactrl_param_5",      INT_T,    _OFFSET(staControl.stactrl_param_5),       _SIZE(staControl.stactrl_param_5), 20}, //timer Z
+-    {"stactrl_param_6",      INT_T,    _OFFSET(staControl.stactrl_param_6),       _SIZE(staControl.stactrl_param_6), 35}, //rssi thredshold for non-prefer sta
++    {"stactrl_param_6",      INT_T,    _OFFSET(staControl.stactrl_param_6),       _SIZE(staControl.stactrl_param_6), 60}, //rssi threshold for non-prefer sta
+ #if STA_CONTROL_ALGO == STA_CONTROL_ALGO3
+     {"stactrl_param_7",      INT_T,    _OFFSET(staControl.stactrl_param_7),       _SIZE(staControl.stactrl_param_7), 2}, //kickoff times //20170103
+     {"stactrl_param_8",      INT_T,    _OFFSET(staControl.stactrl_param_8),       _SIZE(staControl.stactrl_param_8), 30}, //nolink reset kickoff times //20170106
+     {"stactrl_param_9",      INT_T,    _OFFSET(staControl.stactrl_param_9),       _SIZE(staControl.stactrl_param_9), 60}, //5Glink reset kickoff times //20170106
++    {"stactrl_param_10",     BYTE_T,   _OFFSET(staControl.stactrl_param_10),      _SIZE(staControl.stactrl_param_10),10}, //20171124, hidden AP duration
++    {"stactrl_functions",    BYTE_T,   _OFFSET(staControl.stactrl_functions),     _SIZE(staControl.stactrl_functions),3}, //20171222, BIT[0](enable block5G feature) BIT[1](enable hiddenAP feature)
+ #endif    
+ #endif
+ 
+@@ -2342,11 +2444,12 @@ static struct iwpriv_arg mib_table[] = {
+     {"block_aging",		BYTE_T, _OFFSET(sr_profile.block_aging),	_SIZE(sr_profile.block_aging),	10},
+     {"tp_max",		INT_T, _OFFSET(sr_profile.tp_max),	_SIZE(sr_profile.tp_max),	12500},
+     {"signal_max",	BYTE_T, _OFFSET(sr_profile.signal_max),	_SIZE(sr_profile.signal_max),	60},
+-    {"signal_min",	BYTE_T, _OFFSET(sr_profile.signal_min),	_SIZE(sr_profile.signal_min),	20},
++    {"signal_min",	BYTE_T, _OFFSET(sr_profile.signal_min),	_SIZE(sr_profile.signal_min),	25},
+     {"load_min",	BYTE_T, _OFFSET(sr_profile.load_min),	_SIZE(sr_profile.load_min),	20},
+     {"speed_weight",	BYTE_T, _OFFSET(sr_profile.speed_weight),_SIZE(sr_profile.speed_weight),2},
+     {"signal_weight",	BYTE_T, _OFFSET(sr_profile.signal_weight),_SIZE(sr_profile.signal_weight),3},
+     {"load_weight",		BYTE_T, _OFFSET(sr_profile.load_weight),	_SIZE(sr_profile.load_weight),	0},
++    {"sr_enable",		 BYTE_T, _OFFSET(sr_profile.enable), _SIZE(sr_profile.enable),	 0},
+ #endif
+ 
+ #ifdef CROSSBAND_REPEATER
+@@ -2463,6 +2566,8 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"total_max_sta",	RFFT_T, _OFFSET_RFFT(dynamic_max_num_stat), _SIZE_RFFT(dynamic_max_num_stat), 0},	
+ 	{"sub_pwr", RFFT_T, _OFFSET_RFFT(sub_pwr), _SIZE_RFFT(sub_pwr), 0}, 
+ #ifdef RTK_AC_SUPPORT
++// SIGMA
++	{"sigma_mode", RFFT_T, _OFFSET_RFFT(sigma_mode), _SIZE_RFFT(sigma_mode), 0},
+ // operating mode notification
+ 	{"opm",	RFFT_T, _OFFSET_RFFT(oper_mode_field), _SIZE_RFFT(oper_mode_field), 0x00}, //eric-8822 ?? shall follow mu txbf document ??
+ 	{"opmtest", RFFT_T, _OFFSET_RFFT(opmtest), _SIZE_RFFT(opmtest), 0x00},	
+@@ -2538,6 +2643,7 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"waketh", RFFT_T, _OFFSET_RFFT(waketh), _SIZE_RFFT(waketh), 1},
+ 	{"rts_iot_th", RFFT_T, _OFFSET_RFFT(rts_iot_th), _SIZE_RFFT(rts_iot_th), 0},	
+ 	{"lock5d1", RFFT_T, _OFFSET_RFFT(lock5d1), _SIZE_RFFT(lock5d1), 1}, //timeout to unlock 8822B TXPAUSE (avoid Tx Spur during WiFi on)
++	{"txpause_iqk", RFFT_T, _OFFSET_RFFT(txpause_iqk), _SIZE_RFFT(txpause_iqk), 1}, //pause mac tx during IQK  
+ #if (MU_BEAMFORMING_SUPPORT == 1)		
+ 	{"qtime", RFFT_T, _OFFSET_RFFT(qtime), _SIZE_RFFT(qtime), 80},	
+ 	{"qlmt", RFFT_T, _OFFSET_RFFT(qlmt), _SIZE_RFFT(qlmt), 1500},	
+@@ -2689,10 +2795,18 @@ static struct iwpriv_arg mib_table[] = {
+ 	{"debug",	RFFT_T, _OFFSET_RFFT(debug), _SIZE_RFFT(debug), 1},
+ 	{"limit_tp",	RFFT_T, _OFFSET_RFFT(limit_tp), _SIZE_RFFT(limit_tp), 0},
+ #endif
++#ifdef CONFIG_VERIWAVE_CHECK
++	{"veriwave_test",		RFFT_T,	_OFFSET_RFFT(veriwave_test), _SIZE_RFFT(veriwave_test), 0},
++	{"dis_veriwave_adaptivity",		RFFT_T,	_OFFSET_RFFT(dis_veriwave_adaptivity), _SIZE_RFFT(dis_veriwave_adaptivity), 0},
++#endif
++
+ #if defined(CONFIG_WLAN_HAL_8197F)||defined(CONFIG_WLAN_HAL_8822BE)
+ 	{"force_bcn",	RFFT_T, _OFFSET_RFFT(force_bcn), _SIZE_RFFT(force_bcn), 1},
++	{"bcnigi",	RFFT_T, _OFFSET_RFFT(beacon_igi), _SIZE_RFFT(beacon_igi), 1},
++#endif
++#if defined(BT_COEXIST) || defined(BT_COEXIST_HAL)
++	{"bt_coex_ant",		RFFT_T,	_OFFSET_RFFT(bt_coex_ant), _SIZE_RFFT(bt_coex_ant), 0},
+ #endif
+-
+ };
+ 
+ #ifdef _DEBUG_RTL8192CD_
+@@ -3484,7 +3598,6 @@ int set_mib(struct rtl8192cd_priv *priv, unsigned char *data)
+ 				if (QOS_ENABLE) {
+ 					if ( (memcmp(entry->name, "manual_edca", 11) == 0) ||
+ 						(memcmp(entry->name, "sta_", 4) == 0) || (memcmp(entry->name, "ap_", 3) == 0)) {
+-						extern void dynamic_EDCA_para(struct rtl8192cd_priv *priv, int mode);
+ 						if ((OPMODE & WIFI_AP_STATE)
+ #ifdef CLIENT_MODE
+ 							|| (OPMODE & WIFI_ADHOC_STATE)
+@@ -3498,6 +3611,7 @@ int set_mib(struct rtl8192cd_priv *priv, unsigned char *data)
+ 							init_WMM_Para_Element(priv, priv->pmib->dot11QosEntry.WMM_IE);	//	WMM STA
+ 						}
+ #endif
++						extern void dynamic_EDCA_para(struct rtl8192cd_priv *priv, int mode);
+ 						dynamic_EDCA_para(priv,  priv->pmib->dot11BssType.net_work_type);
+ 					}
+ 				}
+@@ -4027,7 +4141,7 @@ int get_mib(struct rtl8192cd_priv *priv, unsigned char *data)
+ 	#define PRINT_INFO  printk
+ #endif
+ 	struct iwpriv_arg *entry;
+-	int i, *int_ptr, copy_len;
++	int i, len, *int_ptr, copy_len;
+ 	char tmpbuf[40];
+ 
+ 	DEBUG_TRACE;
+@@ -4783,7 +4897,7 @@ static int read_rf_reg(struct rtl8192cd_priv *priv, unsigned char *data)
+ }
+ 
+ 
+-#ifdef BT_COEXIST
++#ifdef ENABLE_BT_COEXIST
+ int btc_h2c(struct rtl8192cd_priv *priv, unsigned char *data)
+ {
+ 	unsigned char h2c_id, h2c_data, H2CCommand[6] = {0}, buf[10];
+@@ -4907,6 +5021,9 @@ int __del_mclone_addr(struct rtl8192cd_priv *priv, unsigned char *tmpAddr)
+ 		tmpPriv = priv->pshare->mclone_sta[idx-1].priv;
+ 
+ 		SAVE_INT_AND_CLI(flags);
++		if (CamDeleteOneEntry(tmpPriv, priv->pshare->mclone_sta[idx-1].hwaddr, 0, 0)) {
++			priv->pshare->CamEntryOccupied--;
++		}
+ 		pstat = get_stainfo(tmpPriv, (GET_MIB(tmpPriv))->dot11StationConfigEntry.dot11Bssid);
+ 		if (pstat) {
+ 			printk("Remove mclone[%d]: %02x%02x%02x%02x%02x%02x\n", idx-1, tmpAddr[0], tmpAddr[1], tmpAddr[2], tmpAddr[3], tmpAddr[4], tmpAddr[5]);
+@@ -6551,9 +6668,10 @@ int del_sta(struct rtl8192cd_priv *priv, unsigned char *data)
+ {
+ 	struct stat_info *pstat;
+ 	unsigned char macaddr[MACADDRLEN], tmpbuf[3];
+-#ifdef SMP_SYNC
++#ifndef SMP_SYNC
+ 	unsigned long flags;
+ #endif
++	DOT11_DISASSOCIATION_IND Disassociation_Ind;
+ 	int i, send_disasoc=1;
+ 
+ 	if (!netif_running(priv->dev))
+@@ -6604,6 +6722,10 @@ int del_sta(struct rtl8192cd_priv *priv, unsigned char *data)
+ 	event_indicate(priv, macaddr, 2);
+ #endif
+ 
++	// for priv->del_sta_info.branch_code 1, 2, 3, 4, 12, 14, 23, and it may trigger branch 10 if STA doesn't receive disassoc timely
++	if (send_disasoc)
++		set_del_sta_info(priv, pstat->hwaddr, _RSON_UNSPECIFIED_);
++
+ 	return del_station(priv, pstat, send_disasoc);
+ }
+ 
+@@ -6644,6 +6766,9 @@ int silence_sta(struct rtl8192cd_priv *priv, unsigned char *data)
+ 	pstat = get_stainfo(priv, macaddr);
+ 	if(pstat && !list_empty(&(pstat->asoc_list)))   //associated AP keep silence and deauth sta
+ 	{
++		DRV_RT_TRACE(priv, DRV_DBG_CONN_INFO, DRV_DBG_SERIOUS, "issue_deauth - %02X:%02X:%02X:%02X:%02X:%02X\n",
++								macaddr[0],macaddr[1],macaddr[2],macaddr[3],macaddr[4],macaddr[5]);
++		
+         issue_deauth(priv, macaddr, _RSON_DISAOC_STA_LEAVING_);
+ 
+ 		pstat->prepare_to_free = 1;
+@@ -8333,12 +8458,10 @@ extern void rtl88XX_tx_dsr(unsigned long task_priv);
+ void RX_MAC_Verify_8814(struct rtl8192cd_priv *priv,unsigned char * pframe,struct rx_frinfo *pfrinfo)
+ {
+      PRX_DESC_88XX                   prx_desc;
+-	unsigned char pattern[5] = {0x55,0x55,0x55,0x55,0x55};
+-#ifdef HW_DETEC_POWER_STATE
+     int i;
+     unsigned char macid;
++    unsigned char pattern[5] = {0x55,0x55,0x55,0x55,0x55};
+     unsigned char pwrBit;
+-#endif
+     unsigned char payLoadMACid;
+         
+     prx_desc                        = (PRX_DESC_88XX)(pframe-sizeof(RX_DESC_88XX));
+@@ -8457,7 +8580,7 @@ void issue_Test_NullData(struct rtl8192cd_priv *priv,unsigned char macID,unsigne
+ //    unsigned char hwaddr[6] = {0x00,0x11,0x11,0x11,0x11,0x11};
+     unsigned char BMCaddr[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
+     unsigned char RAhwaddr[6] = {0x00,0xE0,0x4C,0x55,0x66,0x77};
+-//    unsigned char VirualSoruce[6] = {0x00,0xE0,0x4C,0x77,0x88,0x99};
++    unsigned char VirualSoruce[6] = {0x00,0xE0,0x4C,0x77,0x88,0x99};
+ 
+     unsigned char pattern[5] = {0x55,0x55,0x55,0x55,0x55};
+     unsigned char *pbuf;
+@@ -8574,21 +8697,9 @@ void KeepIssueVOPkt(struct rtl8192cd_priv *priv);
+ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ {
+     unsigned char *val[10];
+-    int i=0;
++    int i=0, op=0, offset;
+     char *delim = ",";
+-    int mode = 0;
+-    unsigned char RetryLimitNum = 0;
+-    unsigned char Enable = 0;
+-    unsigned char macIDNum = 0;
+-    unsigned char lowestRate =0;
+-    unsigned char macID = 0;
+-    unsigned char type;
+-    unsigned char tempEn;
+-    static unsigned char pollingCnt;
+-    // mode2
+-    unsigned char option;
+-    unsigned int reg_addr;
+-    unsigned char releaseBit;
++    unsigned char input;
+ 
+ 
+ 
+@@ -8600,16 +8711,33 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+     }
+ 
+     for(i=0;i<10;i++)
++    {
+       val[i] = kmalloc(10,GFP_ATOMIC); 
++    }
+ 
+-	val[0] = strtok2(data,delim);
+-    if(val[0])
++    if(val[0] = strtok2(data,delim))
+     {
+         i= 1;        
+-        while(!!(val[i] = strtok2(NULL,delim)))
++        while(val[i]= strtok2(NULL,delim))
++        {
+             i++;
+         }
++    }
+   
++    int mode = 0;
++    unsigned char RetryLimitNum = 0;
++    unsigned char lowestRetry = 0;    
++    unsigned char Enable = 0;    
++    unsigned char macIDNum = 0;      
++    unsigned char lowestRate =0; 
++    unsigned char macID;
++    unsigned char type;    
++    unsigned char tempEn;   
++    static unsigned char pollingCnt;   
++    // mode2
++    unsigned char option;   
++    unsigned int reg_addr;           
++    unsigned char releaseBit;        
+ 
+ 
+     RTL_W32(0x80, RTL_R32(0x80)|BIT15);    
+@@ -8625,7 +8753,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+         
+         if((!val[1])||(!val[2])||(!val[3])||(!val[4])) {
+             printk("%s %d CMD : iwpriv wlan0 apTest 0,enableBit,RetryLimitNum,macIDNum,type\n",__FUNCTION__,__LINE__); 
+-            return 0;
++            return;
+         }
+    
+         // enable=0, in TXDESC
+@@ -8674,7 +8802,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 
+         if((!val[1])||(!val[2])||(!val[3])||(!val[4])) {
+            printk("%s %d CMD : iwpriv wlan0 apTest 1,TXDESC/RPTBuffer,LowestRTYRate,macIDNum,type\n",__FUNCTION__,__LINE__); 
+-           return 0;
++           return;
+         }
+ 
+         Enable   = _atoi(val[1],10);
+@@ -8721,7 +8849,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+         
+         if((!val[1])||(!val[2])||(!val[3])) {
+            printk("%s %d CMD : iwpriv wlan0 apTest 2,Option,MPDU/AMPDU,macIDNum\n",__FUNCTION__,__LINE__); 
+-           return 0;
++           return;
+         }
+ 
+         option = _atoi(val[1],10);
+@@ -8960,24 +9088,24 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+         printk("%s %d AppendMACHeaderForRXpacket Test \n",__FUNCTION__,__LINE__);        
+     break; 
+     case HWAutoAppendMACID:
+-    {
+-    	unsigned char hwaddr[6] = {0x00,0x11,0x11,0x11,0x11,0x11};
+         //HWAutoAppendMACID iwpriv wlan0 apTest 4,macID,
+         // example iwpriv wlan0 apTest 4,1 
+         // Test For 128 MACID        
+ 
+         if((!val[1])) {
+            printk("%s %d CMD : iwpriv wlan0 apTest 1,TXDESC/RPTBuffer,LowestRTYRate,macIDNum,type\n",__FUNCTION__,__LINE__); 
+-           return 0;
++           return;
+         }
+ 
+         macIDNum = _atoi(val[1],10);   
+         RTL_W32(0x6bc, 0x03000000);  // set CRC5 buffer addr                 
+         // fill mac address
++    	unsigned char hwaddr[6] = {0x00,0x11,0x11,0x11,0x11,0x11};     
++        unsigned int test;
+         for(macID = 0;macID < macIDNum;macID++)
+         {
+             hwaddr[5]= 0x11 + macID;
+-            GET_HAL_INTERFACE(priv)->SetTxRPTHandler(priv, macID, TXRPT_VAR_MAC_ADDRESS, &hwaddr[0]);
++            GET_HAL_INTERFACE(priv)->SetTxRPTHandler(priv, macID, TXRPT_VAR_MAC_ADDRESS, &hwaddr);   
+             GET_HAL_INTERFACE(priv)->SetCRC5ToRPTBufferHandler(priv,CRC5(hwaddr,6), macID,1);               
+          }
+ 
+@@ -8985,14 +9113,13 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+          priv->RXMACIDTestEn = true;
+          
+          printk("%s %d HWAutoAppendMACID Test \n",__FUNCTION__,__LINE__);        
+-    }
+     break;
+     case HWSupportPowerStatedetect:
+     {
+         unsigned char cmp = 0;
+         if((!val[1])) {
+            printk("%s %d CMD : iwpriv wlan0 apTest 5,macID\n",__FUNCTION__,__LINE__); 
+-           return 0;
++           return;
+         }
+ 
+         cmp = _atoi(val[2],10);
+@@ -9033,7 +9160,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+         
+         if((!val[1])) {
+            printk("%s %d CMD : iwpriv wlan0 apTest 8 BMC_RTY_LMT\n",__FUNCTION__,__LINE__); 
+-           return 0;
++           return;
+         }
+ 
+         mode = _atoi(val[1],10);   
+@@ -9060,19 +9187,20 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+     break;
+ #endif //MULTICAST_BMC_ENHANCE
+ 	case VedioEnhancement:
+-	{
+ 		//remember to open #define CONFIG_8814_AP_MAC_VERI, and manual EDCA, change Q_MAP -->#define TXDMA_VOQ_MAP_SEL   TXDMA_MAP_HIGH
+ 		//disable download FW to avoid printing tx hang due to drop bit is not cleared
+-		u1Byte count_i;
+-		u2Byte	specialQ;
+-		u1Byte bufvalue[8];
+-		u1Byte test_value = 0;
+ 		if((!val[1])) {
+            printk("%s %d CMD : iwpriv wlan0 apTest 2,Option\n",__FUNCTION__,__LINE__); 
+-           return 0;
++           return;
+         }
+ 
+         option = _atoi(val[1],10);        
++		u1Byte count_i;
++		u1Byte  data[2];
++		u2Byte	specialQ;
++		u1Byte bufvalue[8];
++		u1Byte test_value = 0;
++		int count_loop=0;
+ 
+ 		//enable video enhancement function
+ 		RTL_W16(0x4E4, 0x1);
+@@ -9081,8 +9209,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+         switch(option)
+         {
+         	case 1: //test Check if Q0~Q7 are full, new VOQ packet will be put in S0/S1.
+-			{
+-				u1Byte pkt_i = 0;
++
+ 				//pause Q0-Q7
+ 				for(count_i = 1; count_i < 9; count_i++) 
+ 					GET_HAL_INTERFACE(priv)->SetMACIDSleepHandler(priv,1,count_i);
+@@ -9092,12 +9219,13 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+             		issue_Test_NullData(priv,count_i,BE_QUEUE,0);  
+ 
+ 				//check info before issue VO pkt
+-				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue[0]);
++				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue);
+ 				specialQ = 0;
+ 				specialQ = bufvalue[6] | ((bufvalue[7]&0xf) << 8);
+ 				printk("BEFORE EXE, MACID=1, Special Queue Number = %d.\n",specialQ);
+ 				
+ 				//issue packet to queue S0/S1
++				u1Byte pkt_i = 0;
+ 				for(pkt_i=0;pkt_i<100;pkt_i++)
+ 				{
+ 					//MACID=1
+@@ -9108,7 +9236,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 				}
+ 				//pkt should be in S1 (even number MAC)
+ 				//read ctrl info to get Special Queue Number
+-				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue[0]);
++				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue);
+ 				specialQ = 0;
+ 				specialQ = bufvalue[6] | ((bufvalue[7]&0xf) << 8);
+ 				if(specialQ > 0)
+@@ -9119,7 +9247,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 				//cancel pause Q0-Q7
+ 				for(count_i = 1; count_i < 9; count_i++) 
+ 					GET_HAL_INTERFACE(priv)->SetMACIDSleepHandler(priv,0,count_i);
+-			}
++				
+ 			break;
+ #if 1			
+ 			case 2:
+@@ -9136,7 +9264,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+             		issue_Test_NullData(priv,count_i,BE_QUEUE,0);  
+ 				
+ 				//check Special Queue Number
+-				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue[0]);
++				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue);
+ 				specialQ = 0;
+ 				specialQ = bufvalue[6] | ((bufvalue[7] & 0xf) << 8);
+ 				printk("BEFORE issue VO Pkt, MACID=1, Special Queue Number = %d.\n",specialQ);
+@@ -9146,7 +9274,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 
+ 				loop_countr = 0;
+ 				init_timer(&tickfn); 
+-				tickfn.function = (void*) &KeepIssueVOPkt;
++				tickfn.function = KeepIssueVOPkt; 
+ 				tickfn.data = (unsigned long)priv; 
+ 				//tickfn.expires = jiffies + RTL_MILISECONDS_TO_JIFFIES(1); 
+ 				mod_timer(&tickfn,jiffies + RTL_MILISECONDS_TO_JIFFIES(1)); 
+@@ -9154,7 +9282,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 				break;
+ 			case 7: //exe after command 2, handled by KeepIssueVOPkt func, don't exe by manual keyin command.
+ 				//check Special Queue Number
+-				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue[0]);
++				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue);
+ 				specialQ = 0;
+ 				specialQ = bufvalue[6] | ((bufvalue[7] & 0xf) << 8);
+ 				printk("BEFORE cacel MACID=1 sleep bit, MACID=1, Special Queue Number = %d.\n",specialQ);
+@@ -9164,7 +9292,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 				printk("cancel MACID=1 sleep bit.\n");
+ 				
+ 				//check Special Queue Number
+-				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue[0]);
++				GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue);
+ 				specialQ = 0;
+ 				specialQ = bufvalue[6] | ((bufvalue[7] & 0xf) << 8);
+ 				printk("AFTER cancel MACID=1 sleep bit, Special Queue Number = %d.\n",specialQ);
+@@ -9196,14 +9324,14 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 					GET_HAL_INTERFACE(priv)->SetMACIDSleepHandler(priv,1,1);
+ 					//check S0/S1 is empty
+ 					//check Special Queue Number
+-					GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue[0]);
++					GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue);
+ 					specialQ = 0;
+ 					specialQ = bufvalue[6] | ((bufvalue[7] & 0xf) << 8);
+ 					printk("STOP issue VO pkt, MACID=1, Special Queue Number = %d.\n",specialQ);
+ 					printk("Q0-Q1: %x, Q2-Q3: %x, Q4-Q5: %x, Q6-Q7: %x,\n",RTL_R32(0x1400), RTL_R32(0x1404), RTL_R32(0x1408), RTL_R32(0x140c));
+ 					while(specialQ > 0) //now the special number is always not 0, don't use while(1)
+ 					{
+-						GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue[0]);
++						GET_HAL_INTERFACE(priv)->GetTxRPTHandler(priv, 1, TXRPT_VAR_ALL, 1,&bufvalue);
+ 						specialQ = 0;
+ 						specialQ = bufvalue[6] | ((bufvalue[7] & 0xf) << 8);
+ 						printk("STOP issue VO pkt, MACID=1, Special Queue Number = %d.\n",specialQ);
+@@ -9249,7 +9377,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 				for(count_i = 1; count_i < 9; count_i++)
+             		issue_Test_NullData(priv,count_i,BE_QUEUE,0);  
+ 				
+-				//ï¿½]ï¿½wï¿½ï¿½ï¿½ï¿½drop, check sniffer
++				//³]©wª½±µdrop, check sniffer
+ 				RTL_W16(0x4E4, RTL_R16(0x4E4) | BIT(1));
+ 				issue_Test_NullData(priv,1,VO_QUEUE,0); 
+ 				//sniffer will not see any pkt due to pkts are droped.
+@@ -9300,7 +9428,6 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 				printk("No such option item.\n");
+ 			break;
+         }
+-	}
+ 		break;
+         
+     #ifdef CONFIG_WLAN_MACHAL_API
+@@ -9342,7 +9469,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 
+         if((!val[1])||(!val[2])||(!val[3])) {
+           printk("%s(%d): CMD: iwpriv wlan0 apTest dd,macID,type,cnt \n", __FUNCTION__, __LINE__);
+-          return 0;
++          return;
+         }
+ 
+         macID = _atoi(val[1], 10);
+@@ -9372,7 +9499,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+ 
+ 		if((!val[1])||(!val[2])) {
+ 			printk("%s(%d): CMD: iwpriv wlan0 apTest de,REG_QX_INFO,cnt \n", __FUNCTION__, __LINE__);
+-			return 0;
++			return;
+ 		}
+ 
+ 		reg1 = _atoi(val[1], 16); // ex: 400
+@@ -9416,7 +9543,7 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+                 RTL_W8(0x8000+i,0);
+             }
+         printk("Reset TXPKTBuffer !!! \n");      
+-        return 0;
++        return;        
+     case 0xFF:
+         GET_HAL_INTERFACE(priv)->SetTxRPTHandler(priv, macID, TXRPT_VAR_ALL, NULL);
+ 
+@@ -9434,20 +9561,19 @@ int APmacTestFunction_8814(struct rtl8192cd_priv *priv, unsigned char *data)
+         RTL_W32(0x1144,0x0);          
+         RTL_W32(0x1148,0x0);          
+         printk("Reset RPTBuffer !!! \n");
+-        return 0;
++        return;
+     break;
+     
+     default:
+         printk("%s %d Unkonw operation ! mode=%x\n",__FUNCTION__,__LINE__,mode);
+     break;        
+ 	}
+- 	return 0;
+  }
+ 
+ void KeepIssueVOPkt(struct rtl8192cd_priv *priv)
+ {
+-	u1Byte pkt_i = 0;
+ 	printk("timer func: issue VO pkt\n");
++	u1Byte pkt_i = 0;
+ 	for(pkt_i=0;pkt_i<100;pkt_i++)
+ 	{
+ 		//MACID=1
+@@ -9807,7 +9933,7 @@ subtract all-rate power:\n	iwpriv wlanx set_power sub,{a,b,c,d},{power index}\n"
+ static int shift_power_index(struct rtl8192cd_priv *priv, unsigned char* data)
+ {
+ 	volatile char tmpbuf[100];
+-	int i=0;
++	int i=0, size=0, len;
+ 	unsigned char *ptxagc = NULL, add=0, sub=0;
+ 	char shift_power_idx=0; 
+ 
+@@ -9940,7 +10066,7 @@ static int shift_power_index(struct rtl8192cd_priv *priv, unsigned char* data)
+ 		}
+ 
+ 	}	
+-	return 0;
++
+ }
+ 
+ 
+@@ -11434,6 +11560,19 @@ int ioctl_AddDelMCASTGroup2STA(struct net_device *dev, struct ifreq *ifr, int cm
+ 	struct iwreq *wrq = (struct iwreq *) ifr;
+ #endif
+ 	struct rtl8192cd_priv *priv = GET_DEV_PRIV(dev);
++	struct wifi_mib *pmib = priv->pmib;
++	
++#ifdef WLAN_VDEV_SUPPORT
++	if( !strncmp(dev->name, "vwlan", strlen("vwlan")) )
++	{
++		//dev is wlan virtual device, must switch to real device for ioctl().
++		struct net_device *rdev;
++
++		dev = rdev = priv->vdev;
++		priv = GET_DEV_PRIV(rdev);
++		pmib = priv->pmib;
++	}
++#endif
+ 
+ 	int ret, i;
+ 	if (!priv->pshare->rf_ft_var.mc2u_disable) {
+@@ -11763,82 +11902,82 @@ void reset_nop_channel(struct rtl8192cd_priv *priv)
+ {
+ 	if (timer_pending(&priv->ch52_timer)) {
+ 		del_timer_sync(&priv->ch52_timer);
+-		rtl8192cd_ch52_timer((unsigned long)priv);
++		rtl8192cd_ch52_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch56_timer)) {
+ 		del_timer_sync(&priv->ch56_timer);
+-		rtl8192cd_ch56_timer((unsigned long)priv);
++		rtl8192cd_ch56_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch60_timer)) {
+ 		del_timer_sync(&priv->ch60_timer);
+-		rtl8192cd_ch60_timer((unsigned long)priv);
++		rtl8192cd_ch60_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch64_timer)) {
+ 		del_timer_sync(&priv->ch64_timer);
+-		rtl8192cd_ch64_timer((unsigned long)priv);
++		rtl8192cd_ch64_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch100_timer)) {
+ 		del_timer_sync(&priv->ch100_timer);
+-		rtl8192cd_ch100_timer((unsigned long)priv);
++		rtl8192cd_ch100_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch104_timer)) {
+ 		del_timer_sync(&priv->ch104_timer);
+-		rtl8192cd_ch104_timer((unsigned long)priv);
++		rtl8192cd_ch104_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch108_timer)) {
+ 		del_timer_sync(&priv->ch108_timer);
+-		rtl8192cd_ch108_timer((unsigned long)priv);
++		rtl8192cd_ch108_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch112_timer)) {
+ 		del_timer_sync(&priv->ch112_timer);
+-		rtl8192cd_ch112_timer((unsigned long)priv);
++		rtl8192cd_ch112_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch116_timer)) {
+ 		del_timer_sync(&priv->ch116_timer);
+-		rtl8192cd_ch116_timer((unsigned long)priv);
++		rtl8192cd_ch116_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch120_timer)) {
+ 		del_timer_sync(&priv->ch120_timer);
+-		rtl8192cd_ch120_timer((unsigned long)priv);
++		rtl8192cd_ch120_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch124_timer)) {
+ 		del_timer_sync(&priv->ch124_timer);
+-		rtl8192cd_ch124_timer((unsigned long)priv);
++		rtl8192cd_ch124_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch128_timer)) {
+ 		del_timer_sync(&priv->ch128_timer);
+-		rtl8192cd_ch128_timer((unsigned long)priv);
++		rtl8192cd_ch128_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch132_timer)) {
+ 		del_timer_sync(&priv->ch132_timer);
+-		rtl8192cd_ch132_timer((unsigned long)priv);
++		rtl8192cd_ch132_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch136_timer)) {
+ 		del_timer_sync(&priv->ch136_timer);
+-		rtl8192cd_ch136_timer((unsigned long)priv);
++		rtl8192cd_ch136_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch140_timer)) {
+ 		del_timer_sync(&priv->ch140_timer);
+-		rtl8192cd_ch140_timer((unsigned long)priv);
++		rtl8192cd_ch140_timer(priv);
+ 	}
+ 
+ 	if (timer_pending(&priv->ch144_timer)) {
+ 		del_timer_sync(&priv->ch144_timer);
+-		rtl8192cd_ch144_timer((unsigned long)priv);
++		rtl8192cd_ch144_timer(priv);
+ 	}
+ }
+ #endif
+@@ -12181,7 +12320,7 @@ int rtl8192cd_ioctl_getmac(struct net_device *dev, struct ifreq *ifr, int cmd)
+ #endif
+ 	unsigned long flags;
+ 	struct iwreq *wrq = (struct iwreq *) ifr;
+-	int ret = 0;
++	int i = 0, ret = 0;
+ 
+ 	SAVE_INT_AND_CLI(flags);
+ 	SMP_LOCK(flags);
+@@ -12515,6 +12654,11 @@ int rtl8192cd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 		break;
+ 
+ 	case SIOCMIBSYNC:	//-- sync user data to kernel data  --//
++	{			
++#if defined(MULTI_MAC_CLONE) && defined(UNIVERSAL_REPEATER) && defined(CONFIG_WLAN_HAL)
++		unsigned char	hwaddr[MACADDRLEN];
++		memcpy(hwaddr, GET_MY_HWADDR, MACADDRLEN);
++#endif
+ 		if (wrq->u.data.length != sizeof(struct wifi_mib)) {
+ 			panic_printk("IOCTL: mib size mismatch!\n");
+ 			ret = -1;
+@@ -12522,7 +12666,12 @@ int rtl8192cd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 		}
+ 		if (ioctl_copy_from_user((void *)pmib, (void *)wrq->u.data.pointer, wrq->u.data.length) == 0)
+ 			ret = 0;
++#if defined(MULTI_MAC_CLONE) && defined(UNIVERSAL_REPEATER) && defined(CONFIG_WLAN_HAL)
++		if(IS_VXD_INTERFACE(priv) && IS_HAL_CHIP(priv))
++			memcpy(GET_MY_HWADDR, hwaddr, MACADDRLEN);
++#endif		
+ 		break;
++	}
+ 
+ #ifdef RTK_ATM
+ 	case SIOCMIBSYNC_ATM:
+@@ -12623,6 +12772,10 @@ int rtl8192cd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 					} else
+ #endif
+ 					{	//if station
++						// del_sta branch 1, IOCTL "add_acl_table" and ACL mode is deny
++						priv->del_sta_info.branch_code = 1;
++						DRV_RT_TRACE(priv, DRV_DBG_CONN_INFO, DRV_DBG_SERIOUS, " ADD_ACL_TABLE del_sta %02X%02X%02X%02X%02X%02X\n",
++							tmpbuf[0], tmpbuf[1], tmpbuf[2], tmpbuf[3], tmpbuf[4], tmpbuf[5]);
+ 						del_sta(priv, (unsigned char *)(wrq->u.data.pointer));
+ 					}
+ 				}
+@@ -12655,6 +12808,8 @@ int rtl8192cd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 					} else
+ #endif
+ 					{	//if station
++						//del_sta branch 2, IOCTL "remove_acl_table" and ACL mode is allow
++						priv->del_sta_info.branch_code = 2;
+ 						del_sta(priv, (unsigned char *)(wrq->u.data.pointer));
+ 					}
+ 				}
+@@ -12820,6 +12975,10 @@ int rtl8192cd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 		if ((wrq->u.data.length > sizeof_tmpbuf) ||
+ 			ioctl_copy_from_user(tmpbuf, (void *)wrq->u.data.pointer, wrq->u.data.length))
+ 			break;
++		// del_sta branch 4, IOCTL "del_sta"
++		priv->del_sta_info.branch_code = 4;
++		DRV_RT_TRACE(priv, DRV_DBG_CONN_INFO, DRV_DBG_SERIOUS, " IOCTL_DEL_STA del_sta %02X%02X%02X%02X%02X%02X\n",
++							tmpbuf[0], tmpbuf[1], tmpbuf[2], tmpbuf[3], tmpbuf[4], tmpbuf[5]);
+ 		ret = del_sta(priv, tmpbuf);
+ 		break;
+ 
+@@ -12859,6 +13018,10 @@ int rtl8192cd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 		    break;
+ 		ret = delete_stactrl(priv,tmpbuf);
+ 		break;
++		
++	case RTL8192CD_IOCTL_HIDDEN_AP:
++		ret = stactrl_hidden_ap(priv);
++		break;
+ #endif
+ #endif
+ 
+@@ -13735,11 +13898,23 @@ int rtl8192cd_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 		wrq->u.data.length = i;
+ 		ret = 0;
+ 		break;
+-#ifdef BT_COEXIST
++#ifdef ENABLE_BT_COEXIST
+ 	case SIOBTCH2C:
+ 		CTRL_LEN_CHECK(sizeof_tmpbuf,wrq->u.data.length); 
+ 		if(ioctl_copy_from_user(tmpbuf, (void *)wrq->u.data.pointer, wrq->u.data.length))
+ 			break;
++		if (!strncmp(tmpbuf, "btoff", 5)) {
++			//rtw_btcoex_SetManualControl(priv, 1);
++			//hal_btcoex_SetManualControl(priv, 1);
++			ret = 0;
++			break;
++		} else if (!strncmp(tmpbuf, "bton", 4)) {
++			//rtw_btcoex_SetManualControl(priv, 0);
++			//hal_btcoex_SetManualControl(priv, 0);
++			ret = 0;
++			break;
++		}
++
+ 		i = btc_h2c(priv, tmpbuf);
+ 		if (i > 0) {
+ 			if (ioctl_copy_to_user((void *)wrq->u.data.pointer, tmpbuf, i))
+@@ -14286,8 +14461,9 @@ case DO_KFREE:
+ 
+     	DEBUG_INFO("del_br_sc %02X%02X%02X%02X%02X%02X\n",
+ 		macaddr[0], macaddr[1], macaddr[2], macaddr[3], macaddr[4], macaddr[5]);        
+-
++#ifdef RTL_CACHED_BR_STA
+         release_brsc_cache(macaddr);
++#endif
+ 		ret = 0;
+ 		break;  
+        }
+@@ -15220,7 +15396,11 @@ case DO_KFREE:
+ 			ioctl_copy_from_user(tmpbuf, (void *)wrq->u.data.pointer, sizeof(struct bss_transition_para)))
+ 			break;
+ 
++		RESTORE_INT(flags);
++		SMP_UNLOCK(flags);
+ 		 set_BssTransPara(priv, tmpbuf);
++		SAVE_INT_AND_CLI(flags);
++		SMP_LOCK(flags);
+         	 ret = 0;       	   
+ 		break;
+ #endif

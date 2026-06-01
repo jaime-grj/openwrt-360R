@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# Copyright (C) 2018 OpenWrt.org
+#
+
+[ -e /etc/config/branding ] && exit 0
+
+touch /etc/config/branding
+
+. /lib/functions.sh
+. /lib/rtkmipsel.sh
+
+board=$(board_name)
+
+case "$board" in
+kinkan)
+	uci set system.@system[0].hostname=Kinkan
+	uci set wireless.@wifi-iface[0].ssid=Kinkan
+	;;
+komikan)
+	uci set system.@system[0].hostname=Komikan
+	uci set wireless.@wifi-iface[0].ssid='Komikan 5G'
+	uci set wireless.@wifi-iface[1].ssid='Komikan 2G'
+	;;
+ac10u)
+	uci set system.@system[0].hostname=AC10U
+	uci set wireless.@wifi-iface[0].ssid='AC10U 5G'
+	uci set wireless.@wifi-iface[1].ssid='AC10U 2G'
+	;;
+netis360r)
+	uci set system.@system[0].hostname=360R
+	uci set wireless.@wifi-iface[0].ssid='NETIS 5G'
+	uci set wireless.@wifi-iface[1].ssid='NETIS 2G'
+	;;
+*)
+	;;
+esac
+
+uci commit system
+uci commit wireless
+
+exit 0
